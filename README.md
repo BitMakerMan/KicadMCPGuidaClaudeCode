@@ -29,7 +29,7 @@ Questa guida spiega come collegare **Claude Code CLI** al **KiCad MCP Server** s
 
 Su Linux/macOS l'installazione è spesso immediata; su Windows emergono due problemi specifici:
 
-1. **Python sbagliato** — il server MCP ha bisogno che `PYTHONPATH` punti alla cartella `dist-packages` di KiCad (quella che contiene la libreria `pcbnew`). Usare il Python di sistema causa un crash all'avvio.
+1. **Python sbagliato** — il server MCP ha bisogno che `PYTHONPATH` punti alla cartella Python di KiCad (quella che contiene la libreria `pcbnew`). Usare il Python di sistema causa un crash all'avvio.
 2. **Variabili d'ambiente rotte** — passare variabili complesse via PowerShell al comando `claude mcp add` spesso fallisce o viene interpretato in modo errato.
 
 **La soluzione** è un wrapper batch (`start.cmd`) che prepara l'ambiente correttamente prima di avviare il server.
@@ -72,8 +72,6 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ### Opzione B — Setup manuale
 
-Se preferisci il controllo completo, esegui i passi uno per uno:
-
 ```powershell
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
@@ -94,42 +92,44 @@ Get-ChildItem .\dist\
 
 ## 🔍 Step 2 — Trovare i percorsi di KiCad
 
-Il server MCP non ha bisogno del percorso all'eseguibile `python.exe`, ma della cartella **`dist-packages`** che contiene la libreria `pcbnew`. I percorsi variano in base alla versione installata.
+Il server MCP ha bisogno che `PYTHONPATH` punti alla cartella che contiene `pcbnew.py`.
 
-> **Sostituisci `TUO_UTENTE`** con il tuo nome utente Windows dove necessario.
+> ⚠️ **Attenzione:** il percorso cambia tra versioni di KiCad e tra Windows e Linux.  
+> Su Windows **non** usare `dist-packages` (percorso Linux) — la cartella corretta è `site-packages`.
 
-### KiCad 9.0 (installazione globale — percorso più comune)
+### Trovare `python.exe` di KiCad
 
+```powershell
+Get-ChildItem -Path "C:\Users\$env:USERNAME\AppData\Local\Programs\KiCad" -Recurse -Filter "python.exe" -ErrorAction SilentlyContinue
 ```
-Eseguibile Python:  C:\Program Files\KiCad\9.0\bin\python.exe
-PYTHONPATH:         C:\Program Files\KiCad\9.0\lib\python3\dist-packages
+
+### Trovare la cartella di `pcbnew.py`
+
+```powershell
+Get-ChildItem -Path "C:\Users\$env:USERNAME\AppData\Local\Programs\KiCad" -Recurse -Filter "pcbnew.py" -ErrorAction SilentlyContinue
 ```
 
-### KiCad 10.0 (installazione nella cartella utente)
+### Percorsi verificati per versione
 
-```
-Eseguibile Python:  C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\python.exe
-PYTHONPATH:         C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\lib\python3\dist-packages
-```
+| Versione KiCad | `python.exe` | `PYTHONPATH` |
+|---|---|---|
+| **10.0** (installazione utente) | `C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\python.exe` | `C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\Lib\site-packages` |
+| **9.0** (installazione globale) | `C:\Program Files\KiCad\9.0\bin\python.exe` | `C:\Program Files\KiCad\9.0\lib\python3\dist-packages` |
+
+> 💡 Sostituisci `TUO_UTENTE` con il tuo nome utente Windows.
 
 ### ✅ Verifica obbligatoria — test `pcbnew`
 
-Prima di procedere, esegui questo comando per confermare che il modulo `pcbnew` sia raggiungibile. Se il test fallisce, il server MCP non funzionerà:
+Prima di procedere, esegui questo comando per confermare che `pcbnew` sia raggiungibile. Se il test fallisce, il server MCP non funzionerà:
 
 ```powershell
-# KiCad 9.0
-& "C:\Program Files\KiCad\9.0\bin\python.exe" -c "import pcbnew; print(pcbnew.GetBuildVersion())"
+# KiCad 10.0
+& "C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\python.exe" -c "import pcbnew; print(pcbnew.GetBuildVersion())"
 ```
 
-Output atteso (esempio):
+Output atteso:
 ```
-(9.0.1)
-```
-
-Se ricevi `ModuleNotFoundError`, il percorso `dist-packages` è sbagliato — cercalo con:
-
-```powershell
-Get-ChildItem -Path "C:\Program Files\KiCad" -Recurse -Filter "pcbnew.py" 2>$null
+10.0.0
 ```
 
 ---
@@ -141,7 +141,18 @@ Questo file batch imposta le variabili d'ambiente necessarie e avvia il server.
 > ⚠️ **Attenzione alla variabile:** quella corretta è **`PYTHONPATH`** (standard Python), **non** `PYTHON_PATH`. Usare il nome sbagliato fa sì che il runtime Python ignori completamente la variabile.
 
 1. Apri il **Blocco Note** di Windows.
-2. Incolla il codice seguente, adattando i percorsi alla tua installazione:
+2. Incolla il codice seguente sostituendo `TUO_UTENTE` con il tuo nome utente:
+
+**Per KiCad 10.0 (installazione utente):**
+
+```batch
+@echo off
+set PYTHONPATH=C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\Lib\site-packages
+set KICAD_BIN_PATH=C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin
+node "C:\Users\TUO_UTENTE\KiCAD-MCP-Server\dist\index.js"
+```
+
+**Per KiCad 9.0 (installazione globale):**
 
 ```batch
 @echo off
@@ -160,7 +171,7 @@ node "C:\Users\TUO_UTENTE\KiCAD-MCP-Server\dist\index.js"
 
 ### Abilitare il debug (opzionale)
 
-Per registrare l'intera sessione MCP nella cartella `logs/` del progetto, aggiungi questa riga allo script prima della riga `node`:
+Per registrare l'intera sessione MCP nella cartella `logs/` del progetto, aggiungi questa riga prima della riga `node`:
 
 ```batch
 set KICAD_MCP_DEV=1
@@ -212,7 +223,7 @@ Se preferisci non usare il wrapper `.cmd`, puoi configurare le variabili d'ambie
       "command": "node",
       "args": ["C:/Users/TUO_UTENTE/KiCAD-MCP-Server/dist/index.js"],
       "env": {
-        "PYTHONPATH": "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
+        "PYTHONPATH": "C:/Users/TUO_UTENTE/AppData/Local/Programs/KiCad/10.0/bin/Lib/site-packages",
         "LOG_LEVEL": "info"
       }
     }
@@ -285,7 +296,13 @@ Esporta i file Gerber per la produzione.
 
 ### `ModuleNotFoundError: No module named 'pcbnew'`
 
-`PYTHONPATH` punta alla cartella sbagliata. Esegui il test di verifica dello Step 2 e assicurati che `PYTHONPATH` in `start.cmd` punti a `dist-packages`, non a `bin\python.exe`.
+`PYTHONPATH` punta alla cartella sbagliata. Esegui il test di verifica dello Step 2 e cerca `pcbnew.py` con:
+
+```powershell
+Get-ChildItem -Path "C:\Users\$env:USERNAME\AppData\Local\Programs\KiCad" -Recurse -Filter "pcbnew.py" -ErrorAction SilentlyContinue
+```
+
+Poi aggiorna `PYTHONPATH` in `start.cmd` con la cartella trovata.
 
 ### La configurazione non viene trovata
 

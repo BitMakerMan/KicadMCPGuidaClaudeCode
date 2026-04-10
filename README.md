@@ -4,7 +4,7 @@
 > Collega Claude Code al tuo KiCad e parla con i tuoi PCB in linguaggio naturale.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![KiCad](https://img.shields.io/badge/KiCad-8.0%20%7C%209.0%20%7C%2010.0-blue)](https://www.kicad.org/)
+[![KiCad](https://img.shields.io/badge/KiCad-9.0%20%7C%2010.0-blue)](https://www.kicad.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)](https://github.com/BitMakerMan/KicadMCPGuidaClaudeCode)
 
 ---
@@ -29,10 +29,12 @@ Questa guida spiega come collegare **Claude Code CLI** al **KiCad MCP Server** s
 
 Su Linux/macOS l'installazione è spesso immediata; su Windows emergono due problemi specifici:
 
-1. **Python sbagliato** — il server MCP ha bisogno della versione di Python *integrata in KiCad* (quella che contiene la libreria `pcbnew`). Usare un altro Python causa un crash all'avvio.
+1. **Python sbagliato** — il server MCP ha bisogno che `PYTHONPATH` punti alla cartella `dist-packages` di KiCad (quella che contiene la libreria `pcbnew`). Usare il Python di sistema causa un crash all'avvio.
 2. **Variabili d'ambiente rotte** — passare variabili complesse via PowerShell al comando `claude mcp add` spesso fallisce o viene interpretato in modo errato.
 
 **La soluzione** è un wrapper batch (`start.cmd`) che prepara l'ambiente correttamente prima di avviare il server.
+
+> **Alternativa rapida:** il repo ufficiale include uno script PowerShell automatico `setup-windows.ps1` che esegue tutti i passaggi di installazione in un colpo solo (vedi [Step 1](#-step-1--clonare-e-compilare-il-server)).
 
 ---
 
@@ -41,52 +43,93 @@ Su Linux/macOS l'installazione è spesso immediata; su Windows emergono due prob
 | Strumento | Versione minima | Note |
 |---|---|---|
 | [Node.js](https://nodejs.org/) | v18+ | Necessario per il server MCP |
+| [Python](https://www.python.org/) | 3.10+ | Usare il Python di sistema per `pip`, non quello di KiCad |
 | [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) | ultima | Deve funzionare già standalone |
-| [KiCad](https://www.kicad.org/) | 8.0 / 9.0 / 10.0 | La guida usa i percorsi della v10.0 |
+| [KiCad](https://www.kicad.org/) | **9.0+** | Versione minima richiesta dal server MCP |
 | Git | qualsiasi | Per clonare il repository del server |
+
+> ⚠️ **KiCad 8.0 non è supportato** dal server MCP ufficiale. Aggiorna almeno alla 9.0.
 
 ---
 
 ## 🛠️ Step 1 — Clonare e compilare il server
 
-Apri **PowerShell** o **Git Bash** e lancia:
+### Opzione A — Setup automatico (consigliato)
 
-```bash
+Il repo ufficiale include uno script PowerShell che installa tutto automaticamente:
+
+```powershell
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+cd KiCAD-MCP-Server
+.\setup-windows.ps1
+```
+
+Se lo script viene bloccato dall'execution policy, esegui prima:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+### Opzione B — Setup manuale
+
+Se preferisci il controllo completo, esegui i passi uno per uno:
+
+```powershell
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
 npm install
+pip install -r requirements.txt
 npm run build
 ```
 
-Verifica che la compilazione termini senza errori e che esista la cartella `dist/` con il file `index.js` al suo interno.
+> ⚠️ **Non saltare `pip install -r requirements.txt`** — le dipendenze Python sono obbligatorie per il funzionamento del server.
+
+Verifica che al termine esista la cartella `dist/` con il file JS al suo interno:
+
+```powershell
+Get-ChildItem .\dist\
+```
 
 ---
 
 ## 🔍 Step 2 — Trovare i percorsi di KiCad
 
-Prima di creare lo script devi conoscere i percorsi esatti della tua installazione.
+Il server MCP non ha bisogno del percorso all'eseguibile `python.exe`, ma della cartella **`dist-packages`** che contiene la libreria `pcbnew`. I percorsi variano in base alla versione installata.
 
-> **Sostituisci `TUO_UTENTE`** con il tuo nome utente Windows in tutti i percorsi seguenti.
+> **Sostituisci `TUO_UTENTE`** con il tuo nome utente Windows dove necessario.
 
-### KiCad 10.0 (Nightly / cartella utente)
-
-```
-C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin
-C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\python.exe
-```
-
-### KiCad 8.0 / 9.0 (installazione globale)
+### KiCad 9.0 (installazione globale — percorso più comune)
 
 ```
-C:\Program Files\KiCad\8.0\bin
-C:\Program Files\KiCad\8.0\bin\python.exe
+Eseguibile Python:  C:\Program Files\KiCad\9.0\bin\python.exe
+PYTHONPATH:         C:\Program Files\KiCad\9.0\lib\python3\dist-packages
 ```
 
-Puoi verificare rapidamente l'esistenza del Python di KiCad da PowerShell:
+### KiCad 10.0 (installazione nella cartella utente)
+
+```
+Eseguibile Python:  C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\python.exe
+PYTHONPATH:         C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\lib\python3\dist-packages
+```
+
+### ✅ Verifica obbligatoria — test `pcbnew`
+
+Prima di procedere, esegui questo comando per confermare che il modulo `pcbnew` sia raggiungibile. Se il test fallisce, il server MCP non funzionerà:
 
 ```powershell
-Test-Path "C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\python.exe"
-# deve restituire: True
+# KiCad 9.0
+& "C:\Program Files\KiCad\9.0\bin\python.exe" -c "import pcbnew; print(pcbnew.GetBuildVersion())"
+```
+
+Output atteso (esempio):
+```
+(9.0.1)
+```
+
+Se ricevi `ModuleNotFoundError`, il percorso `dist-packages` è sbagliato — cercalo con:
+
+```powershell
+Get-ChildItem -Path "C:\Program Files\KiCad" -Recurse -Filter "pcbnew.py" 2>$null
 ```
 
 ---
@@ -95,21 +138,35 @@ Test-Path "C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\python.exe"
 
 Questo file batch imposta le variabili d'ambiente necessarie e avvia il server.
 
+> ⚠️ **Attenzione alla variabile:** quella corretta è **`PYTHONPATH`** (standard Python), **non** `PYTHON_PATH`. Usare il nome sbagliato fa sì che il runtime Python ignori completamente la variabile.
+
 1. Apri il **Blocco Note** di Windows.
 2. Incolla il codice seguente, adattando i percorsi alla tua installazione:
 
 ```batch
 @echo off
-set PYTHON_PATH=C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin\python.exe
-set KICAD_BIN_PATH=C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad\10.0\bin
+set PYTHONPATH=C:\Program Files\KiCad\9.0\lib\python3\dist-packages
+set KICAD_BIN_PATH=C:\Program Files\KiCad\9.0\bin
 node "C:\Users\TUO_UTENTE\KiCAD-MCP-Server\dist\index.js"
 ```
 
+> 💡 Se dopo la build il file generato si chiama `kicad-server.js` invece di `index.js`, aggiorna l'ultima riga di conseguenza. Verificalo con `Get-ChildItem .\dist\`.
+
 3. Vai su **File → Salva con nome…**
 4. Salva il file **dentro la cartella del server** (es. `C:\Users\TUO_UTENTE\KiCAD-MCP-Server\`).
-5. Nel menu a tendina "Salva come" scegli **Tutti i file (`*.*`)** e nomina il file esattamente `start.cmd`.
+5. Nel menu a tendina scegli **Tutti i file (`*.*`)** e nomina il file esattamente `start.cmd`.
 
 > ⚠️ Assicurati che l'estensione sia `.cmd` e **non** `.cmd.txt`.
+
+### Abilitare il debug (opzionale)
+
+Per registrare l'intera sessione MCP nella cartella `logs/` del progetto, aggiungi questa riga allo script prima della riga `node`:
+
+```batch
+set KICAD_MCP_DEV=1
+```
+
+> 🔒 **Privacy:** il log contiene la cronologia completa dei tool call, inclusi percorsi file e dettagli del design. Elimina la cartella `logs/` prima di pubblicare o condividere il progetto.
 
 ---
 
@@ -131,7 +188,7 @@ Added stdio MCP server kicad with command: cmd /c "C:\Users\TUO_UTENTE\KiCAD-MCP
 File modified: ...\.claude.json [project: C:\Tua\Cartella\Progetto]
 ```
 
-Il file `.claude.json` generato avrà una struttura simile a questa:
+Il file `.claude.json` generato avrà questa struttura:
 
 ```json
 {
@@ -139,6 +196,25 @@ Il file `.claude.json` generato avrà una struttura simile a questa:
     "kicad": {
       "command": "cmd",
       "args": ["/c", "C:\\Users\\TUO_UTENTE\\KiCAD-MCP-Server\\start.cmd"]
+    }
+  }
+}
+```
+
+### Configurazione alternativa diretta (senza wrapper)
+
+Se preferisci non usare il wrapper `.cmd`, puoi configurare le variabili d'ambiente direttamente nel `.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "node",
+      "args": ["C:/Users/TUO_UTENTE/KiCAD-MCP-Server/dist/index.js"],
+      "env": {
+        "PYTHONPATH": "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
+        "LOG_LEVEL": "info"
+      }
     }
   }
 }
@@ -164,7 +240,7 @@ Se tutto è configurato correttamente vedrai:
 
 ```
 ● kicad  ✓ connected
-  Tools: (decine di strumenti riconosciuti)
+  Tools: 65+ strumenti organizzati in categorie
 ```
 
 ---
@@ -193,23 +269,23 @@ Elenca tutte le net della board e le relative connessioni.
 Ci sono componenti senza footprint assegnato?
 ```
 
+```
+Esporta i file Gerber per la produzione.
+```
+
 ---
 
 ## 🔧 Risoluzione dei problemi
 
 ### Il server risulta disconnesso (`✗ failed`)
 
-- Verifica che i percorsi in `start.cmd` siano corretti e che `python.exe` esista.
-- Prova ad eseguire `start.cmd` direttamente da PowerShell per leggere l'eventuale errore.
-- Controlla che `npm run build` abbia prodotto il file `dist/index.js`.
+- Esegui `start.cmd` direttamente da PowerShell per leggere il messaggio d'errore completo.
+- Verifica che `pip install -r requirements.txt` sia stato eseguito.
+- Controlla che `npm run build` abbia prodotto almeno un file `.js` nella cartella `dist/`.
 
-### `python.exe` non trovato
+### `ModuleNotFoundError: No module named 'pcbnew'`
 
-Il Python di KiCad si trova sempre nella cartella `bin` dell'installazione. Cercalo con:
-
-```powershell
-Get-ChildItem -Path "C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad" -Recurse -Filter "python.exe"
-```
+`PYTHONPATH` punta alla cartella sbagliata. Esegui il test di verifica dello Step 2 e assicurati che `PYTHONPATH` in `start.cmd` punti a `dist-packages`, non a `bin\python.exe`.
 
 ### La configurazione non viene trovata
 
@@ -218,6 +294,12 @@ Get-ChildItem -Path "C:\Users\TUO_UTENTE\AppData\Local\Programs\KiCad" -Recurse 
 ### Errori con spazi nel percorso
 
 Assicurati che tutti i percorsi in `start.cmd` siano racchiusi tra virgolette doppie `"..."`.
+
+### `setup-windows.ps1` bloccato da PowerShell
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
 
 ---
 
